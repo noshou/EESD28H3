@@ -1,0 +1,143 @@
+---
+title: "Population Dynamics Part 1"
+author: "Bruno Travassos de Britto"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Population Dynamics (Part 1)
+
+### 1.Exponential growth for *discrete* time.
+
+-   Modelling begins with a pragmatic question, what do we want the model for.
+
+The most common question in Population dynamics is "what is the size of the population?", in other words "how many individuals are there?".
+
+-   The second step in modelling is identifying your assumptions.
+
+Every model begins with a theoretical expectation about the world. In the modelling world it is common to call these theoretical expectations "Assumptions"
+
+Let's begin with the simplest of biological assumptions.
+
+**Assumption 1: All life comes from life**
+
+If the question is how many individuals are there, the output of the model should be *Number of Individuals.*
+
+**Task 1.1:** Based only on Assumption 1 list factors that affect the number of individuals in a population. For the context of modelling, let's call these factors "parameters".
+1. Number of individuals
+2. Environment carrying capacity
+3. Growth rate of organisms 
+   - we abstract this as the intrinsic rate of growth
+   - it is unbounded and includes death rate + birth rate
+   - unbounded w.r.t. carrying capacity
+4. Time w.r.t. t=0
+   
+**Task 1.2:** For each listed parameter create an object in R (use a descriptive name or symbol) and assign a (reasonable) value to it.
+
+```{r}
+population size     = n
+carrying capacity   = k
+growth rate         = r
+time                = t 
+discrete_time_param = lambda
+initial pop. size = n_0
+n = n_0 * lambda^(t)  # discrete time
+n = n_0 * e^(rt)      # continuous 
+```
+
+To fit a parameter into the model we need to understand how it affects our output. Because we decided to use analytical models, we expect these mechanisms to be translatable into mathematical operations.
+
+**Task 1.3:** Mount an equation in R, using your parameters, that equal number of individuals. You will have to think of the mathematical relationship between the parameters.
+
+```{r}
+ 
+```
+
+**Task 1.4:** Use your equation to predict the the number of individuals at Time 13, when the population started with 2 individuals.
+
+```{r}
+
+```
+
+**Task 1.5:** Using the pre-made code below plot a graph showing your function of number of individuals per time.
+
+```{r}
+plot(
+t  , #write before the comma the object containing your time. 
+n , #write before the comma the object containing your number of individuals. 
+  type = "l", #creates a line graph
+  xlab = "Time", #labels x axis
+  ylab = "Population size",# labels y axis
+  main = "Exponential Growth Model",# titles the graph.
+)
+```
+
+#### Exponential growth for *continuous* population.
+
+The thing is that time can very seldom be blocked into something discrete that make sense to all organisms. The model for continuous time in population growth is $N = N0 \times e^{r \times t}$
+
+Create a model based on this equation and play with the parameters to see what happens.
+
+#### Speed!
+
+We don't want to know the number of individuals but, how fast a population is growing or crashing. The speed of growth of a population is not dependent on the initial number of individuals, only on the intrinsic rate and the immediate number of individuals.
+
+We know that $speed = \frac{distance}{time}$. However we are not talking about speed through space here, we are not talking about speed of growth. Therefore distance is actually difference of number of individuals divided by time, in other words $Growth speed = \frac{dN}{dT}$.
+
+So if we want to know the growth speed of a population $\frac{dN}{dT}$ is my new model output.
+
+**Task 1.6:** Based only on Axiom 1: ‘All life comes from life’ list the minimum parameters affecting the growth speed of a population. TIP: it is a simpler model than the individual number model.
+
+```{r}
+```
+
+Now... in nature populations don't grow indefinitely... let's discuss why.
+
+### 2.Speed limits
+
+In nature there there are always limits to how much and how fast a population can actually grow. Lets add another assumption to our theoretical expectation about the world.
+
+**Assumption 2: Population growth is limited by a density-dependent mechanism.**
+
+**Task 2.1:** Let's try to figure out how we can mathematically map this assumption into the two models we created, number of individuals and growth speed.
+
+```{r}
+```
+
+### 3. Here comes a new challenger!! Competition!
+
+![](images/clipboard-4161891739.png){width="359"}
+
+Time for another assumption
+
+**Assumption 3a: Individuals of another species compete for the same resources.**
+
+**Task 3.1:** Let's try to figure out how we can mathematically map this assumption into the two models we created, number of individuals and growth speed.
+
+```{r}
+
+```
+
+In the previous assumption there is a simplifying assumption that competitors are equivalent. However, in nature, there could be better and worse competitors.
+
+**Task 3.2:** Let's try to figure out how we can mathematically map different competitive abilities into the models created.
+
+```{r}
+
+```
+
+### 4. Prey and Predators
+
+Different models may import different aspects of nature under study. Let's remove competition and add a relationship between two trophic levels. 
+
+**Assumption 3b: Populations dynamics of prey affect population dynamics of predators and vice versa.**
+
+**Task 4.1:** Let's try to figure out how we can mathematically map prey and predator affecting one another into the models created.
+
+```{r}
+
+```

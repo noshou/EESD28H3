@@ -1,0 +1,83 @@
+---
+title: "Intraspecific competition Numeric simulation"
+author: "Bruno Travassos de Britto"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+Use the following parameters to build a graph of logistic growth for
+
+$\frac{dN}{dt} = rN \left(1 - \frac{N}{K}\right)$
+
+r = 0.3
+
+K = 500
+
+N0 = 10
+
+time = seq(1, 50, by = 0.5)
+
+```{r}
+# WON'T WORK: NEED LIST OF N
+# Step 1: Assign the values to the parameters above.
+
+#Step 3: Plot the graph by using the plot function. x should be time, and y should be dn_dt. Use the parameters. 'xlab', 'ylab', and 'type' to customize your graph.
+  
+```
+
+If everything ran correctly you should have plotted how $\frac{dN}{dt}$ changes in function of time.
+
+Based on the explanation through the slides, we learned that the method for numeric integration (Eulers integration method) is using the following formula:
+
+$N_{t+\Delta t} = N_t + \Delta t \times r N_t \left(1 - \frac{N_t}{K}\right)$
+
+This formula should help us calculate the area bellow this curve, numerically instead of analytically and estimate how population size changes with time.
+
+We need to provide a time interval $\Delta t$ as a parameter. To understand what is going on let's provide a very large $\Delta t$.
+
+```{r}
+
+dt <- 50 ## defining a very large interval.
+time <- seq(0,50, by=dt) ## all of our time is from zero to 50 therefore we only have to calculate two points in the graph.
+
+#Step 1: Create a variable N that will save a different value of N for each different value of time.
+N0 <- 10
+r <- 0.3
+K <- 500
+
+N <- c(
+  N0 = N0, # number of individuals at the beginning of the analysis
+  N1 = N0 + dt * r * N0 * (1 - N0/K) # number of individuals at the same time step.
+)
+
+N
+#Step 2: create a plot with N in function of time to see how the population changes through this time steps. 
+plot(time,N)
+
+```
+
+You may have figured out that this is not how the curve for population size in a logistic growth should look like. The reason for this is because our approximation of an integration is too coarse. We need to refine it by adding more points to this graph. Computers are not good at math, but fortunatelly, computers are good at doing repetitive things. Let's learn how to use computation in our favour.
+
+### Learning about loops 
+
+ 
+```{r} 
+# parameters
+r    <- 0.3
+K    <- 500
+N0   <- 10
+t_f  <- 50
+
+# sequences
+N    <- numeric(t_f) # for values in 
+N[1] <- N0
+T    <- seq(1, t_f, by=1)
+
+# Euler's method
+for(i in 2:t_f){
+  N[i] <- N[i-1] + (T[i] - T[i-1]) * r * N[i-1]*(1-N[i-1]/K)
+}
+
+# plot
+plot(T, N)
+```

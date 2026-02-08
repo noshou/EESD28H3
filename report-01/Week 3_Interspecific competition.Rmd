@@ -355,8 +355,8 @@ mtext("Lotka-Volterra Competition Isoclines", outer = TRUE, cex = 1.2)
 ```
 
 ```{r}
-dt <- 0.1
-t <- seq(0, 100, by = dt)
+dt <- 0.05
+t <- seq(0, 50, by = dt)
 r1 <- 0.5
 r2 <- 0.5
 n0_1 <- 50
