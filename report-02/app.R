@@ -146,7 +146,8 @@ ui <- fluidPage(
 			hr(),
 
 			h4("Simulation Settings"),
-			actionButton("exec", "Run Simulation", class = "btn-primary")
+			actionButton("exec", "Run Simulation", class = "btn-primary"),
+			actionButton("scenario_default","Reset Parameters")
 		),
 		
 		# Populations, and Isoclines
@@ -186,11 +187,24 @@ ui <- fluidPage(
 # Backend
 
 server <- function(input, output, session) {
-	
+	# Default Scenario
+	observeEvent(input$scenario_default, {
+		updateNumericInput(session, "k1", value=500)
+		updateNumericInput(session, "k2", value=500)
+		updateNumericInput(session, "alpha12", value=1.1)
+		updateNumericInput(session, "alpha21", value=0.9)
+		updateNumericInput(session, "r1", value=0.5)
+		updateNumericInput(session, "r2", value=0.5)
+		updateNumericInput(session, "n1_0", value=100)
+		updateNumericInput(session, "n2_0", value=100)
+		updateNumericInput(session, "amp_alpha_12", value=1)
+		updateNumericInput(session, "amp_alpha_21", value=1)
+	})
+
 	# Scenario A
 	observeEvent(input$scenario_a, {
-		updateNumericInput(session, "k2", value=250)
 		updateNumericInput(session, "k1", value=400)
+		updateNumericInput(session, "k2", value=250)
 		updateNumericInput(session, "alpha12", value=0.5)
 		updateNumericInput(session, "alpha21", value=2)
 		updateNumericInput(session, "r1", value=0.5)
@@ -203,38 +217,42 @@ server <- function(input, output, session) {
 
 	# Scenario B
 	observeEvent(input$scenario_b, {
-		updateNumericInput(session, "k2", value=250)
 		updateNumericInput(session, "k1", value=400)
-		updateNumericInput(session, "alpha12", value=0.5)
-		updateNumericInput(session, "alpha21", value=2)
-		updateNumericInput(session, "r1", value=0.05)
-		updateNumericInput(session, "r2", value=0.25)
+		updateNumericInput(session, "k2", value=250)
+		updateNumericInput(session, "alpha12", value=2)
+		updateNumericInput(session, "alpha21", value=0.5)
+		updateNumericInput(session, "r1", value=0.5)
+		updateNumericInput(session, "r2", value=0.5)
 		updateNumericInput(session, "n1_0", value=50)
 		updateNumericInput(session, "n2_0", value=50)
-		updateNumericInput(session, "amp_alpha_12", value=2)
-		updateNumericInput(session, "amp_alpha_21", value=0.3)
-		updateNumericInput(session, "prd_alpha_12", value=0.53)
-		updateNumericInput(session, "prd_alpha_21", value=0.53)
-		updateNumericInput(session, "phs_alpha_12", value=-2)
-		updateNumericInput(session, "phs_alpha_21", value=4)
+		updateNumericInput(session, "amp_alpha_12", value=0)
+		updateNumericInput(session, "amp_alpha_21", value=0)
 	})
 
 	# Scenario C
 	observeEvent(input$scenario_c, {
-		updateNumericInput(session, "alpha12", value = 2.5)
-		updateNumericInput(session, "k2", value=250)
 		updateNumericInput(session, "k1", value=400)
-		updateNumericInput(session, "alpha21", value = 1.5)
+		updateNumericInput(session, "k2", value=250)
+		updateNumericInput(session, "alpha12", value=2.5)
+		updateNumericInput(session, "alpha21", value=1.5)
+		updateNumericInput(session, "r1", value=0.5)
+		updateNumericInput(session, "r2", value=0.5)
+		updateNumericInput(session, "n1_0", value=50)
+		updateNumericInput(session, "n2_0", value=50)
 		updateNumericInput(session, "amp_alpha_12", value=0)
 		updateNumericInput(session, "amp_alpha_21", value=0)
 	})
 
 	# Scenario D
 	observeEvent(input$scenario_d, {
-		updateNumericInput(session, "k1", value = 400)
-		updateNumericInput(session, "k2", value = 250)
-		updateNumericInput(session, "alpha12", value = 0.5)
-		updateNumericInput(session, "alpha21", value = 0.5)
+		updateNumericInput(session, "k1", value=400)
+		updateNumericInput(session, "k2", value=250)
+		updateNumericInput(session, "alpha12", value=0.5)
+		updateNumericInput(session, "alpha21", value=0.5)
+		updateNumericInput(session, "r1", value=0.5)
+		updateNumericInput(session, "r2", value=0.5)
+		updateNumericInput(session, "n1_0", value=50)
+		updateNumericInput(session, "n2_0", value=50)
 		updateNumericInput(session, "amp_alpha_12", value=0)
 		updateNumericInput(session, "amp_alpha_21", value=0)
 	})
@@ -281,11 +299,9 @@ server <- function(input, output, session) {
 			ylab = "Population Size",
 			main = "Lotka-Volterra Competition Dynamics")
 		
-		grid(col = "lightgray", lty = "dotted")
-		
 		# Add N2 if selected
 		if(input$show_N2) {
-			lines(data$Time, data$N2, col = "red", lwd = 2, lty = 2)
+			lines(data$Time, data$N2, col = "red", lwd = 2)
 		}
 		
 		# Add carrying capacities if selected
@@ -307,7 +323,7 @@ server <- function(input, output, session) {
 		if(input$show_N2) {
 			legend_items <- c(legend_items, "Species 2")
 			legend_cols <- c(legend_cols, "red")
-			legend_lty <- c(legend_lty, 2)
+			legend_lty <- c(legend_lty, 1)
 		}
 		if(input$show_K) {
 			legend_items <- c(legend_items, expression(K[1]), expression(K[2]))
@@ -326,23 +342,58 @@ server <- function(input, output, session) {
 		}
 	})
 	
-	output$isoclinePlot <- renderPlot({
-		req(sim())		
-		data <- sim()
-		plot(
-			c(input$k1, 0), 
-			c(0, input$k1/input$alpha12),
-			type="l",
-			col="blue",
-			lwd=2
-		)
-		lines(c(0,input$k2/input$alpha21), c(input$k2, 0), col="red", lwd=2)
-		if (input$show_K_iso) {
-			axis(1, at = c(input$k1, input$k2/input$alpha21), labels = c(expression(K[1]), expression(K[2]/alpha[21])))
-			axis(2, at = c(input$k1/input$alpha12, input$k2), labels = c(expression(K[1]/alpha[12]), expression(K[2]))) 
-		}
-	})
+output$isoclinePlot <- renderPlot({
+	req(sim())		
+	data <- sim()
 	
+	# Calculate plot limits
+	xlim <- c(0, max(input$k1, input$k2/input$alpha21) * 1.15)
+	ylim <- c(0, max(input$k2, input$k1/input$alpha12) * 1.15)
+	
+	# Create plot with proper axes
+	plot(c(input$k1, 0), c(0, input$k1/input$alpha12),
+		type = "l", col = "blue", lwd = 2,
+		xlim = xlim, ylim = ylim,
+		xlab = expression(N[1]),
+		ylab = expression(N[2]),
+		main = "Isoclines (Zero Growth Lines)",
+		xaxt = "n", yaxt = "n")
+	
+	grid(col = "lightgray", lty = "dotted")
+	
+	# Add Species 2 isocline
+	lines(c(0, input$k2/input$alpha21), c(input$k2, 0), col = "red", lwd = 2)
+	
+	# Add trajectory
+	lines(data$N1, data$N2, col = "darkgreen", lwd = 2)
+	points(data$N1[1], data$N2[1], pch = 21, bg = "green", cex = 2)
+	points(data$N1[nrow(data)], data$N2[nrow(data)], pch = 22, bg = "red", cex = 2)
+	
+	# Add custom axes if checkbox selected
+	if (input$show_K_iso) {
+		axis(1, at = c(input$k2/input$alpha21, input$k1), 
+			labels = c(expression(K[2]/alpha[21]), expression(K[1])),
+			las = 1)
+		axis(2, at = c(input$k1/input$alpha12, input$k2), 
+			labels = c(expression(K[1]/alpha[12]), expression(K[2])),
+			las = 2)
+	} else {
+		axis(1)
+		axis(2)
+	}
+	
+	# Legend
+	legend("topright",
+			legend = c(expression(paste(N[1], " isocline")),
+					expression(paste(N[2], " isocline")),
+					"Trajectory", "Start", "End"),
+			col = c("blue", "red", "darkgreen", "darkgreen", "darkred"),
+			lty = c(1, 1, 1, NA, NA),
+			pch = c(NA, NA, NA, 21, 22),
+			pt.bg = c(NA, NA, NA, "green", "red"),
+			lwd = 2,
+			bty = "n")
+})	
 	output$finalPops <- renderUI({
 		req(sim())		
 		data <- sim()
