@@ -117,32 +117,32 @@ ui <- fluidPage(
 			hr(),
 
 			h4("Initial Population Sizes"),
-			numericInput("n1_0", "\\(N_{1,0}\\):", value = 100, min = 0),
-			numericInput("n2_0", "\\(N_{2,0}\\):", value = 100, min = 0),
+			numericInput("n1_0", "\\(N_{1,0}\\):", value = 550, min = 0),
+			numericInput("n2_0", "\\(N_{2,0}\\):", value = 1, min = 0),
 			hr(),
 
 			h4("Carrying Capacities"),
 			numericInput("k1", "\\(K_1\\):", value = 500, min = 0),
-			numericInput("k2", "\\(K_2\\):", value = 500, min = 0),
+			numericInput("k2", "\\(K_2\\):", value = 600, min = 0),
 			hr(),
 
 			h4("Competition Coefficients (\\(\\alpha\\))"),
-			numericInput("alpha12", "\\(\\alpha_{1,2}\\):", value = 1.1, min = 0, step = 0.1),
-			numericInput("alpha21", "\\(\\alpha_{2,1}\\):", value = 0.9, min = 0, step = 0.1),
+			numericInput("alpha12", "\\(\\alpha_{1,2}\\):", value = 1.4, min = 0, step = 0.1),
+			numericInput("alpha21", "\\(\\alpha_{2,1}\\):", value = 1.2, min = 0, step = 0.1),
 			hr(),
 
 			h4("Growth rates (\\(r\\))"),
-			numericInput("r1", "\\(r_1\\):", value = 0.5, min = 0, step = 0.1),
-			numericInput("r2", "\\(r_2\\):", value = 0.5, min = 0, step = 0.1),
+			numericInput("r1", "\\(r_1\\):", value = 1.68, min = 0, step = 0.01),
+			numericInput("r2", "\\(r_2\\):", value = 1.5, min = 0, step = 0.01),
 			hr(),
 
 			h4("Variation"),
-			numericInput("amp_alpha_12", "Amplitude of \\(\\alpha_{1,2}\\):", value = 1, min = 0, step = 0.05),
-			numericInput("amp_alpha_21", "Amplitude of \\(\\alpha_{2,1}\\):", value = 1, min = 0, step = 0.05),
-			numericInput("prd_alpha_12", "Period of \\(\\alpha_{2,1}\\):", value = 2*pi, min = 0, step = 1),
-			numericInput("prd_alpha_21", "Period of \\(\\alpha_{2,1}\\):", value = 2*pi, min = 0, step = 1),
-			numericInput("phs_alpha_12", "Phase Shift of \\(\\alpha_{1,1}\\):", value = 0, min=-50, max=50, step = 0.5),
-			numericInput("phs_alpha_21", "Phase Shift of \\(\\alpha_{2,1}\\):", value = 0, min=-50, max=50, step = 0.5),
+			numericInput("amp_alpha_12", "Amplitude of \\(\\alpha_{1,2}\\):", value = 1, min = 0, step = 0.025),
+			numericInput("amp_alpha_21", "Amplitude of \\(\\alpha_{2,1}\\):", value = 1, min = 0, step = 0.025),
+			numericInput("prd_alpha_12", "Period of \\(\\alpha_{2,1}\\):", value = 2.130, min = 0, step = 1),
+			numericInput("prd_alpha_21", "Period of \\(\\alpha_{2,1}\\):", value = 0.5, min = 0, step = 1),
+			numericInput("phs_alpha_12", "Phase Shift of \\(\\alpha_{1,1}\\):", value = 0, step = 0.025),
+			numericInput("phs_alpha_21", "Phase Shift of \\(\\alpha_{2,1}\\):", value = -2.5, step = 0.025),
 			hr(),
 
 			h4("Simulation Settings"),
@@ -185,20 +185,23 @@ ui <- fluidPage(
 )
 
 # Backend
-
 server <- function(input, output, session) {
 	# Default Scenario
 	observeEvent(input$scenario_default, {
 		updateNumericInput(session, "k1", value=500)
-		updateNumericInput(session, "k2", value=500)
-		updateNumericInput(session, "alpha12", value=1.1)
-		updateNumericInput(session, "alpha21", value=0.9)
-		updateNumericInput(session, "r1", value=0.5)
-		updateNumericInput(session, "r2", value=0.5)
-		updateNumericInput(session, "n1_0", value=100)
-		updateNumericInput(session, "n2_0", value=100)
+		updateNumericInput(session, "k2", value=600)
+		updateNumericInput(session, "alpha12", value=1.4)
+		updateNumericInput(session, "alpha21", value=1.2)
+		updateNumericInput(session, "r1", value=1.68)
+		updateNumericInput(session, "r2", value=1.5)
+		updateNumericInput(session, "n1_0", value=550)
+		updateNumericInput(session, "n2_0", value=1)
 		updateNumericInput(session, "amp_alpha_12", value=1)
 		updateNumericInput(session, "amp_alpha_21", value=1)
+		updateNumericInput(session, "phs_alpha_12", 0)
+		updateNumericInput(session, "phs_alpha_21", -2.5)
+		updateNumericInput(session, "prd_alpha_12", 2.13)
+		updateNumericInput(session, "prd_alpha_21", 0.5)
 	})
 
 	# Scenario A
