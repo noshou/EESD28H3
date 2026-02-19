@@ -1,0 +1,70 @@
+---
+title: "My Report"
+output: html_document
+runtime: shiny
+---
+```{r setup, include=FALSE}
+library(ggplot2)
+```
+
+
+<!-- 
+	Model 3:
+	KARL-GÖRAN MÄLER1, ANASTASIOS XEPAPADEAS2 and
+	AART DE ZEEUW
+-->
+```{r}
+	
+	# MODEL 3: HYSTERESIS IN A SHALLOW LAKE
+	# by Euler's method:
+	# P[i] <- P[i-1] + dt * (L(t) - s*P[i-1] + r*P[i-1]^2/(P[i-1]^2 + m^2))
+	
+	# initialize parameters
+	s  <- 0.025      	# yr⁻¹
+	r  <- 0.10      	# mg P/m²/yr
+	m  <- 0.25      	# mg P/m²	p0 <-  0.1
+	p0 <- 0.0005     	# mg P/m² (clear lake start)	
+	dt <- 0.1
+	t <- seq(0, 1000, by=dt)
+	l  <- function(t_) 0.1 + 0.0005 * t_
+	
+	# initialize arrays
+	pt_f 	<- numeric(length(t)) # forwards direction 
+	lt 		<- numeric(length(t)) # only need one lt; no hysteresis here :) 
+	pt_f[1] <- p0
+	lt[1] 	<- l(t[1])
+
+	# forwards direction for pt
+	for (i in 2:length(t)) {
+		
+		# calculate current loading
+		lt[i] <- l(t[i])
+
+		# calculate previous values
+		pt_prev <- pt_f[i-1]
+		lt_prev <- lt[i-1]
+
+		pt_f[i] <- pt_prev + dt * (lt_prev - s * pt_prev + (r * pt_prev^2) / (pt_prev^2 + m^2))
+	}
+
+	# backwards direction... we should see hysteresis
+	pt_b 	<- numeric(length(t)) 
+	pt_b[length(t)] <- pt_f[length(t)]
+	for (i in length(t):2) {
+		
+		# get current loading (already got from prev step!)
+		pt_prev   <- pt_b[i]
+		lt_prev	  <- lt[i]
+		pt_b[i-1] <- pt_prev + dt * (lt_prev - s * pt_prev + (r * pt_prev^2) / (pt_prev^2 + m^2))
+	}
+	pt_b[1] <- p0
+	# concatenate into dataframe
+	df <- data.frame(l_t=t, p_f=pt_f, p_b=pt_b)
+
+	ggplot(df, aes(x = l_t)) +
+		geom_line(aes(y = p_f), color = "blue", lwd = 1) +
+		geom_line(aes(y = p_b), color = "red", lwd = 1) +
+		labs(x = "Loading L", y = "Phosphorus P (mg P/m²)",
+		title = "Hysteresis in a Shallow Lake")
+
+```
