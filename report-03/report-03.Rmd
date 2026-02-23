@@ -1,70 +1,272 @@
 ---
-title: "My Report"
-output: html_document
-runtime: shiny
+title: "Lake Eutrophication: From Logistic Growth to Hysteresis"
+author: "Nathan"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    theme: cosmo
 ---
+
 ```{r setup, include=FALSE}
-library(ggplot2)
+knitr::opts_chunk$set(echo = TRUE, fig.width = 8, fig.height = 5, warning = FALSE)
 ```
 
+## Introduction
 
-<!-- 
-	Model 3:
-	KARL-GÖRAN MÄLER1, ANASTASIOS XEPAPADEAS2 and
-	AART DE ZEEUW
--->
-```{r}
-	
-	# MODEL 3: HYSTERESIS IN A SHALLOW LAKE
-	# by Euler's method:
-	# P[i] <- P[i-1] + dt * (L(t) - s*P[i-1] + r*P[i-1]^2/(P[i-1]^2 + m^2))
-	
-	# initialize parameters
-	s  <- 0.025      	# yr⁻¹
-	r  <- 0.10      	# mg P/m²/yr
-	m  <- 0.25      	# mg P/m²	p0 <-  0.1
-	p0 <- 0.0005     	# mg P/m² (clear lake start)	
-	dt <- 0.1
-	t <- seq(0, 1000, by=dt)
-	l  <- function(t_) 0.1 + 0.0005 * t_
-	
-	# initialize arrays
-	pt_f 	<- numeric(length(t)) # forwards direction 
-	lt 		<- numeric(length(t)) # only need one lt; no hysteresis here :) 
-	pt_f[1] <- p0
-	lt[1] 	<- l(t[1])
+Eutrophication is the process by which a water body becomes enriched with nutrients---primarily nitrogen and phosphorus---leading to excessive growth of algae and phytoplankton. This report walks through three progressively more complex mathematical models of phytoplankton dynamics in a lake, illustrating how simple changes in the structure of a differential equation can produce dramatically different ecological behaviour: from a single stable equilibrium, to alternative stable states, and finally to hysteresis.
 
-	# forwards direction for pt
-	for (i in 2:length(t)) {
-		
-		# calculate current loading
-		lt[i] <- l(t[i])
+All models are solved numerically using the explicit (forward) Euler method, where we approximate the continuous dynamics as:
 
-		# calculate previous values
-		pt_prev <- pt_f[i-1]
-		lt_prev <- lt[i-1]
+$$P(t + \Delta t) = P(t) + \Delta t \cdot \frac{dP}{dt}$$
 
-		pt_f[i] <- pt_prev + dt * (lt_prev - s * pt_prev + (r * pt_prev^2) / (pt_prev^2 + m^2))
-	}
+---
 
-	# backwards direction... we should see hysteresis
-	pt_b 	<- numeric(length(t)) 
-	pt_b[length(t)] <- pt_f[length(t)]
-	for (i in length(t):2) {
-		
-		# get current loading (already got from prev step!)
-		pt_prev   <- pt_b[i]
-		lt_prev	  <- lt[i]
-		pt_b[i-1] <- pt_prev + dt * (lt_prev - s * pt_prev + (r * pt_prev^2) / (pt_prev^2 + m^2))
-	}
-	pt_b[1] <- p0
-	# concatenate into dataframe
-	df <- data.frame(l_t=t, p_f=pt_f, p_b=pt_b)
+## Model 1: Logistic Growth with Linear Loss
 
-	ggplot(df, aes(x = l_t)) +
-		geom_line(aes(y = p_f), color = "blue", lwd = 1) +
-		geom_line(aes(y = p_b), color = "red", lwd = 1) +
-		labs(x = "Loading L", y = "Phosphorus P (mg P/m²)",
-		title = "Hysteresis in a Shallow Lake")
+### The Equation
 
+$$\frac{dP}{dt} = rP\left(1 - \frac{P}{K}\right) - mP$$
+
+This is the simplest model: phytoplankton biomass $P$ grows logistically and is reduced by a linear loss term.
+
+### Parameters
+
+| Parameter | Value | Meaning |
+|-----------|-------|---------|
+| $r$       | 0.5   | Intrinsic growth rate of phytoplankton (per unit time) |
+| $K$       | 100   | Carrying capacity---the maximum biomass the environment can support |
+| $m$       | 0.3   | Linear loss rate, representing mortality, sedimentation, or washout |
+| $\Delta t$| 0.1   | Integration time step |
+
+The growth term $rP(1 - P/K)$ is the classic logistic function: growth is fastest at intermediate biomass and slows as $P$ approaches $K$. The loss term $mP$ removes biomass proportionally to how much is present, which is a reasonable first approximation for processes like grazing by a constant zooplankton population or flushing from a lake.
+
+### Analytical Equilibrium
+
+Setting $dP/dt = 0$ and solving (for the non-trivial case $P \neq 0$):
+
+$$P^* = K\left(1 - \frac{m}{r}\right) = 100\left(1 - \frac{0.3}{0.5}\right) = 40$$
+
+This equilibrium is globally stable for any positive initial condition, meaning the system always converges to the same state regardless of where it starts.
+
+### Simulation
+
+```{r model1}
+r <- 0.5
+K <- 100
+m <- 0.3
+dt <- 0.1
+time <- seq(0, 100, by = dt)
+
+P <- numeric(length(time))
+P[1] <- 5
+
+for (i in 2:length(time)) {
+  growth <- r * P[i-1] * (1 - P[i-1]/K)
+  loss <- m * P[i-1]
+  dP_dt <- growth - loss
+  P[i] <- P[i-1] + dt * dP_dt
+}
+
+results1 <- data.frame(time = time, P = P)
+plot(results1$time, results1$P, type = "l", lwd = 2, col = "steelblue",
+     xlab = "Time", ylab = "Phytoplankton Biomass (P)",
+     main = "Model 1: Single Stable Equilibrium")
+abline(h = K * (1 - m/r), col = "red", lty = 2, lwd = 2)
+legend("bottomright", legend = c("P(t)", paste0("Equilibrium P* = ", K*(1-m/r))),
+       col = c("steelblue", "red"), lty = c(1, 2), lwd = 2)
 ```
+
+### Interpretation
+
+The phytoplankton biomass rises from its initial value of 5 and smoothly approaches the equilibrium at $P^* = 40$. The trajectory is monotonic and there is only one non-trivial steady state. This kind of model cannot explain sudden regime shifts in lakes because the system always returns to the same equilibrium after a perturbation. In environmental terms, this would represent a lake where nutrient levels and grazing pressure combine to produce a single predictable level of algal biomass.
+
+---
+
+## Model 2: Nonlinear Grazing and Alternative Stable States
+
+### The Equation
+
+$$\frac{dP}{dt} = rP\left(1 - \frac{P}{K}\right) - \frac{gP^2}{h^2 + P^2}$$
+
+The key modification is replacing the linear loss $mP$ with a **sigmoidal (Type III) grazing function**. This is the mathematical ingredient that creates the possibility of alternative stable states.
+
+### Parameters
+
+| Parameter | Value | Meaning |
+|-----------|-------|---------|
+| $r$       | 0.3   | Intrinsic growth rate |
+| $K$       | 15    | Carrying capacity |
+| $g$       | 1.2   | Maximum grazing rate---the most biomass grazers can consume per unit time |
+| $h$       | 2     | Half-saturation constant---the value of $P$ at which grazing reaches half its maximum |
+
+The grazing term $\frac{gP^2}{h^2 + P^2}$ has a characteristic S-shape when plotted against $P$. At low $P$, grazing is very weak (grazers have trouble finding sparse phytoplankton). At high $P$, grazing saturates at the maximum rate $g$ (grazers are eating as fast as they can). The steepest part of the curve is near $P = h$. This nonlinearity is what generates multiple equilibria: there are ranges of $P$ where the growth curve and the grazing curve intersect more than once.
+
+### Simulation: Priority Effects
+
+We simulate the system from three different initial conditions to demonstrate that the final state depends on where the system starts---a hallmark of alternative stable states known as the **priority effect**.
+
+```{r model2}
+r <- 0.3
+K <- 15
+g <- 1.2
+h <- 2
+dt <- 0.1
+time <- seq(0, 400, by = dt)
+
+initial_Ps <- c(0.5, 6, 12)
+colors <- c("blue", "forestgreen", "red")
+labels <- c("P(0) = 0.5 (low)", "P(0) = 6 (intermediate)", "P(0) = 12 (high)")
+
+plot(NA, xlim = range(time), ylim = c(0, 15),
+     xlab = "Time", ylab = "Phytoplankton (P)",
+     main = "Model 2: Alternative Stable States (Priority Effect)")
+
+for (run in 1:length(initial_Ps)) {
+  P <- numeric(length(time))
+  P[1] <- initial_Ps[run]
+  
+  for (i in 2:length(time)) {
+    growth <- r * P[i-1] * (1 - P[i-1]/K)
+    grazing <- (g * P[i-1]^2) / (h^2 + P[i-1]^2)
+    dP_dt <- growth - grazing
+    P[i] <- P[i-1] + dt * dP_dt
+  }
+  lines(time, P, col = colors[run], lwd = 2)
+}
+legend("right", legend = labels, col = colors, lwd = 2)
+```
+
+### Interpretation
+
+The blue curve (starting at low biomass) converges to a **clear-water state** with low phytoplankton. The red curve (starting at high biomass) converges to a **turbid state** with high phytoplankton. The green curve, starting at an intermediate value near the unstable equilibrium, may settle into either basin of attraction depending on the exact position. This is the core mechanism behind regime shifts in shallow lakes: a lake can exist in either a clear or a turbid state under the same external conditions, and which state it occupies depends on its history.
+
+### Phase Portrait
+
+The 1D phase portrait plots $dP/dt$ as a function of $P$. Where this curve crosses zero, we have equilibria. The sign of the slope at the crossing tells us stability: if $dP/dt$ goes from positive to negative (crossing downward), the equilibrium is **stable**; if it crosses upward, it is **unstable**.
+
+```{r phase_portrait}
+r_pp <- 0.5
+K_pp <- 15
+g_pp <- 1.5
+h_pp <- 1.5
+
+dP_dt_func <- function(P_val) {
+  growth <- r_pp * P_val * (1 - P_val/K_pp)
+  grazing <- (g_pp * P_val^2) / (h_pp^2 + P_val^2)
+  return(growth - grazing)
+}
+
+P_vals <- seq(0, 15, length.out = 1000)
+dP_vals <- sapply(P_vals, dP_dt_func)
+
+plot(P_vals, dP_vals, type = "l", lwd = 2, col = "black",
+     xlab = "Phytoplankton (P)", ylab = "dP/dt",
+     main = "1D Phase Portrait")
+abline(h = 0, col = "gray", lty = 2)
+
+# Approximate equilibria for these parameter values
+equilibria <- c(1.3, 6.0, 7.9)
+stab_cols <- c("green", "red", "green")
+points(equilibria, rep(0, 3), col = stab_cols, pch = 19, cex = 1.5)
+legend("topright",
+       legend = c("Stable equilibrium", "Unstable equilibrium"),
+       col = c("green", "red"), pch = 19)
+```
+
+The two green dots are the stable equilibria (the clear and turbid states). The red dot is the unstable equilibrium---a threshold or **tipping point**. If a perturbation pushes the system past this threshold, it will cascade into the other basin of attraction.
+
+---
+
+## Model 3: Hysteresis under Changing Nutrient Loading
+
+### Concept
+
+In the real world, nutrient input to a lake is not fixed; it changes due to agricultural runoff, wastewater discharge, or management interventions. The hysteresis model asks: if we slowly increase nutrient loading and then slowly decrease it, does the lake follow the same path back?
+
+The answer is **no**. Because of the alternative stable states, the transitions between clear and turbid regimes happen at *different* nutrient thresholds depending on the direction of change. This asymmetry is called **hysteresis**.
+
+### The Approach
+
+We use the same ODE as Model 2, but now the carrying capacity $K$ is a function of nutrient input $N$:
+
+$$K_{\text{eff}} = \text{scaling} \times N$$
+
+For each value of $N$, we run the simulation to equilibrium and record the final phytoplankton biomass. We do this twice: once starting from a clear state (ramping $N$ up) and once starting from a turbid state (ramping $N$ down).
+
+### Parameters
+
+| Parameter | Value | Meaning |
+|-----------|-------|---------|
+| $r$       | 0.1   | Growth rate |
+| scaling   | 0.065 | Conversion factor from nutrient input to carrying capacity |
+| $g$       | 0.085 | Maximum grazing rate |
+| $h$       | 0.035 | Half-saturation constant for grazing |
+
+```{r hysteresis}
+simulate_lake <- function(N_input, P_initial, time_horizon = 200) {
+  r <- 0.1
+  scaling <- 0.065
+  g <- 0.085
+  h <- 0.035
+  K_eff <- scaling * N_input
+  
+  dt <- 0.1
+  time <- seq(0, time_horizon, by = dt)
+  P <- numeric(length(time))
+  P[1] <- P_initial
+  
+  for (i in 2:length(time)) {
+    growth <- r * P[i-1] * (1 - P[i-1]/K_eff)
+    grazing <- (g * P[i-1]^2) / (h^2 + P[i-1]^2)
+    dP_dt <- growth - grazing
+    P[i] <- P[i-1] + dt * dP_dt
+  }
+  return(tail(P, 1))
+}
+
+# Ramp nutrients UP from clear state
+N_up <- seq(5, 200, by = 0.25)
+P_final_up <- numeric(length(N_up))
+for (j in 1:length(N_up)) {
+  P_final_up[j] <- simulate_lake(N_input = N_up[j], P_initial = 1)
+}
+
+# Ramp nutrients DOWN from turbid state
+N_down <- seq(200, 5, by = -0.25)
+P_final_down <- numeric(length(N_down))
+for (j in 1:length(N_down)) {
+  P_final_down[j] <- simulate_lake(N_input = N_down[j], P_initial = 14)
+}
+
+plot(N_up, P_final_up, type = "l", lwd = 3, col = "blue",
+     xlab = "Nutrient Input (N)", ylab = "Equilibrium Phytoplankton (P)",
+     main = "Hysteresis in Lake Eutrophication",
+     ylim = c(0, 16), xlim = c(5, 200))
+lines(N_down, P_final_down, lwd = 3, col = "red")
+legend("topleft",
+       legend = c("Increasing Nutrients (clear start)",
+                  "Decreasing Nutrients (turbid start)"),
+       col = c("blue", "red"), lwd = 3)
+```
+
+### Interpretation
+
+The blue curve shows the equilibrium phytoplankton biomass as nutrients increase from a clear-water initial condition. For a long range of $N$, the lake remains in the clear state---until a **critical threshold** is reached, at which point the system jumps abruptly to the turbid state. The red curve shows what happens when we then reduce nutrients starting from the turbid state. The lake does *not* recover at the same threshold; it remains turbid until a much lower nutrient level is reached, at which point it collapses back to the clear state.
+
+The region between these two thresholds is the **hysteresis zone**: a range of nutrient inputs where *both* the clear and turbid states are stable, and the state of the lake depends entirely on its history.
+
+---
+
+## Environmental Relevance
+
+These models capture a well-documented phenomenon in shallow lake ecology. Lakes such as those studied in the Netherlands and in the North American Great Plains have exhibited abrupt transitions between clear-water (macrophyte-dominated) and turbid (algae-dominated) regimes. The practical consequences of hysteresis are severe:
+
+- **Prevention is cheaper than restoration.** Because the recovery threshold is much lower than the collapse threshold, it is far easier to prevent a lake from becoming eutrophic than to restore it afterward. Simply reducing nutrient input to the level that originally triggered the collapse is not sufficient.
+
+- **Management must account for history.** Two lakes receiving the same nutrient load can be in completely different states depending on their past. Effective management requires knowing not just current conditions but also which basin of attraction the lake occupies.
+
+- **Tipping points are real.** The abrupt nature of the transitions means that gradual increases in nutrient loading may produce no visible warning signs until the system suddenly flips. Monitoring programs need to be designed to detect early warning signals of approaching thresholds, such as increasing variance or slowing recovery from small perturbations (critical slowing down).
+
+These mathematical models, while simplified, provide a powerful conceptual framework for understanding why lake restoration is so difficult and why proactive nutrient management is essential.
