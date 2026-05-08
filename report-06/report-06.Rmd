@@ -1,0 +1,441 @@
+---
+title: "Mass Balance models"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    theme: journal
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(deSolve)
+library(dplyr)
+library(ggplot2)
+library(tidyr)
+```
+
+# Equifinality
+## Uncertainty analysis
+
+In this lecture we are going to learn about an essential step in modelling with scientific rigour. Conducting an uncertainty analysis.
+
+When we model the world, we are trying to estimate what would be the parameters of our models in the real world.
+
+However, one of the problems is that estimation always comes associated with statistical errors. We almost never can say for sure how the world actually behaves, however, we can calculate our probability of being wrong every time we make an statement about the world. Doing so, requires us to understand the level of uncertainty of our models.
+
+First let's understand why it is important, given what we already know.
+
+## Understanding equifinality
+
+Equifinality means that, when modelling the world, we can reach multiple sets of parameters that seems reasonably similar to the "real-world" set of parameters. To understand this let's artificially create a "real-world" scenario.
+
+```{r}
+# Let's create a "real world" system - a simple lake with unknown parameters
+true_params <- c(
+  k = 0.03,        # Decay rate (1/day) - UNKNOWN!
+  C_in=5           # # Inflow concentration (mg/L) - UNKOWN
+    )
+
+state=c(
+C=2  
+)
+
+# Creates the model of the system
+cstr_model <- function(time,state, parameters) {
+  with(as.list(c(state, parameters)), {
+    V = 10000      # Volume (m³) - known
+    Q = 10        # Flow (m³/day) - known
+    
+    dC_dt <- (Q*C_in)/V - (Q*C)/V - k*C
+    return(list(c(dC_dt)))
+  })
+}
+
+# Run the real system to steady state
+times <- seq(0, 100, by = 1)
+true_output <- ode(y = state, times = times, 
+                   func = cstr_model, parms = true_params)
+true_output_df <- as.data.frame(true_output)
+
+```
+
+So we created a model with outputs without errors. That is impossible to have when trying to understand our world.
+
+**Sources of Uncertainty:**
+
+1.  **Parameter uncertainty** - We don't know the true values.
+
+2.  **Structural uncertainty** - Our model might be wrong (maybe decay isn't first-order?)
+
+3.  **Scenario uncertainty** - Future conditions might be different
+
+4.  **Observation uncertainty** - Our measurements have error
+
+In this example, let's introduce errors associated with observation and sampling.
+
+
+### Introducing measurement errors
+
+```{r}
+set.seed(42)
+
+# Add measurement error to create our "observations"
+observations <- true_output_df %>%
+  filter(time %% 5  == 0) %>%  # Sample every 5 days
+  mutate(C_obs = pmax(0, C + rnorm(n(), 0, 0.15)))  # Observation error SD = 0.15 mg/L
+
+# Plot the observations
+ggplot() +
+  geom_line(data = true_output_df, aes(x = time, y = C),
+            colour = "blue", linewidth = 0.8) +
+  geom_point(data = observations, aes(x = time, y = C_obs),
+             colour = "red", size = 2.5) +
+  labs(title = "True model vs noisy observations",
+       x = "Time (days)", y = "Concentration (mg/L)") +
+  theme_minimal()
+```
+
+### Estimating parameters
+Now, if this was a real experiment, we would have our noisy observations and we know the best model to predict the system described as `cstr_model`
+
+What would the next step be? 
+
+```{r}
+initial_guesses = c(k = 0.05, C_in = 4) # provide initial guesses for the estimated parameters
+
+error_function_cstr <- function(parameters, time, data) {
+  out <- as.data.frame(ode(y = state["C"],
+                           times = data$time,
+                           func = cstr_model,
+                           parms = parameters))
+  
+  C_error <- sum((out[,2]-data$C_obs)^2, na.rm = TRUE)
+  
+  return(C_error)
+}
+
+result <- optim(
+  par = initial_guesses,            # Starting point
+  fn = error_function_cstr,              # Function to minimize
+  data = observations,       # Additional arguments to error_function
+  method = "Nelder-Mead",           # Optimization algorithm
+  control = list(maxit = 1000)      # Settings
+)
+
+cat("Estimated k:", result$par["k"], "\n")
+cat("Estimated C_in:", result$par["C_in"], "\n")
+cat("True k:", true_params["k"], "  True C_in:", true_params["C_in"], "\n")
+
+predicted_sample<-as.data.frame(ode(y = state["C"], times = observations$time, 
+                      func = cstr_model, parms = result$par))
+
+
+
+```
+
+Plot the model optimized to your data in the chunk below and save to the graph `equifinality_plot`
+
+```{r}
+
+predicted1<-predicted_sample$C
+
+equifinality_plot <- ggplot() +
+  geom_line(data = true_output_df, aes(x = time, y = C, colour = "True model"),
+            linewidth = 0.8) +
+  geom_point(data = observations, aes(x = time, y = C_obs, colour = "Observations"),
+             size = 2.5) +
+  geom_line(data = data.frame(time = observations$time, C = predicted1),
+            aes(x = time, y = C, colour = "Optimised fit"),
+            linewidth = 0.8, linetype = "dashed") +
+  scale_colour_manual(values = c("True model" = "blue",
+                                 "Observations" = "red",
+                                 "Optimised fit" = "darkgreen")) +
+  labs(title = "Equifinality: optimised model vs true model",
+       x = "Time (days)", y = "Concentration (mg/L)", colour = "") +
+  theme_minimal()
+
+equifinality_plot
+```
+
+If this is based on the same real-world model, why are all the models not the same?
+
+### Resampling your data.
+```{r}
+initial_guesses = c(k =.03 , C_in=5 ) # provide initial guesses for the estimated parameters
+
+rs_sample<-300
+
+rs_parameters<-data.frame(k = numeric(rs_sample), C_in = numeric(rs_sample))
+
+for(i in 1:rs_sample)
+{
+rs_observations <- true_output_df %>%
+  filter(time %% 5  == 0) %>%  # Sample every 5 days
+  mutate(C_obs = pmax(0, C + rnorm(n(), 0, 0.15)))  # Same observation error
+
+
+result_rs <- optim(
+  par = initial_guesses,            # Starting point
+  fn = error_function_cstr,              # Function to minimize
+  data = rs_observations,       # Additional arguments to error_function
+  method = "Nelder-Mead",           # Optimization algorithm
+  control = list(maxit = 1000)      # Settings
+)
+rs_parameters[i,1] <- result_rs$par[1]
+rs_parameters[i,2] <- result_rs$par[2]
+
+if (i %% 50 == 0) cat("Iteration", i, "of", rs_sample, "\n")
+}
+
+par(mfrow = c(1, 2))
+hist(rs_parameters$k, breaks = 40, col = "steelblue",
+     main = "Distribution of estimated k", xlab = "k")
+abline(v = true_params["k"], col = "red", lwd = 2, lty = 2)
+
+hist(rs_parameters$C_in, breaks = 40, col = "steelblue",
+     main = "Distribution of estimated C_in", xlab = "C_in")
+abline(v = true_params["C_in"], col = "red", lwd = 2, lty = 2)
+par(mfrow = c(1, 1))
+
+```
+
+
+
+# MCMC
+## Metropolis-Hastings  Implementation
+```{r}
+# -----------------------------------------------------------------------------
+# Simple Metropolis-Hastings MCMC Implementation
+# -----------------------------------------------------------------------------
+
+known_params <- c(
+  V = 1000,      # Lake volume (m³)
+  Q = 50,        # Inflow/outflow rate (m³/day)
+  C_in=5
+)
+
+# We'll implement a simple Metropolis-Hastings algorithm
+# This helps students understand the mechanics before using packages
+
+metropolis_mcmc <- function(
+    n_iter = 10000,           # Number of iterations
+    initial_k = 0.3,          # Starting value
+    proposal_sd = 0.05,       # Proposal step size
+    observations,              # Data
+    known_params,              # Known parameters
+    prior_range = c(0.01, 1)  # Prior range for k
+) {
+  
+  # Storage for chain
+  chain <- data.frame(
+    iteration = 1:n_iter,
+    k = NA,
+    log_likelihood = NA,
+    accepted = FALSE
+  )
+  
+  # Initialize
+  current_k <- initial_k
+  current_params <- c(known_params, k = current_k)
+  
+  # Calculate initial likelihood
+  out <- ode(y = c(C = observations$C_obs[1]),
+             times = observations$time,
+             func = cstr_model,
+             parms = current_params)
+  out_df <- as.data.frame(out)
+  
+  # Log-likelihood (assuming normal errors)
+  errors <- observations$C_obs - out_df$C
+  current_loglik <- -length(errors)/2 * log(2*pi) - 
+                    0.5 * sum((errors/0.2)^2)  # Assume SD = 0.2
+  
+  chain[1, ] <- c(1, current_k, current_loglik, TRUE)
+  
+  # MCMC loop
+  for (i in 2:n_iter) {
+    # Propose new k
+    proposed_k <- rnorm(1, current_k, proposal_sd)
+    
+    # Check prior bounds
+    if (proposed_k >= prior_range[1] && proposed_k <= prior_range[2]) {
+      
+      # Run model with proposed k
+      proposed_params <- c(known_params, k = proposed_k)
+      out <- ode(y = c(C = observations$C_obs[1]),
+                 times = observations$time,
+                 func = cstr_model,
+                 parms = proposed_params)
+      out_df <- as.data.frame(out)
+      
+      # Calculate log-likelihood
+      errors <- observations$C_obs - out_df$C
+      proposed_loglik <- -length(errors)/2 * log(2*pi) - 
+                         0.5 * sum((errors/0.2)^2)
+      
+      # Metropolis acceptance ratio
+      log_ratio <- proposed_loglik - current_loglik
+      
+      if (log(runif(1)) < log_ratio) {
+        # Accept
+        current_k <- proposed_k
+        current_loglik <- proposed_loglik
+        accepted <- TRUE
+      } else {
+        # Reject
+        accepted <- FALSE
+      }
+    } else {
+      # Outside prior - reject automatically
+      accepted <- FALSE
+      proposed_loglik <- -Inf
+    }
+    
+    # Store
+    chain[i, ] <- c(i, current_k, current_loglik, accepted)
+  }
+  
+  return(chain)
+}
+
+# Run MCMC
+n_iter <- 10000
+mcmc_chain <- metropolis_mcmc(
+  n_iter = n_iter,
+  initial_k = 0.3,
+  proposal_sd = 0.03,
+  observations = observations,
+  known_params = known_params
+)
+
+# Calculate acceptance rate
+acceptance_rate <- mean(mcmc_chain$accepted)
+cat("MCMC Acceptance rate:", round(100 * acceptance_rate, 1), "%\n")
+
+# --- Diagnostics ---
+par(mfrow = c(1, 2))
+plot(mcmc_chain$iteration, mcmc_chain$k, type = "l",
+     xlab = "Iteration", ylab = "k", main = "Trace plot of k", col = "grey40")
+burnin <- 2001
+hist(mcmc_chain$k[burnin:n_iter], breaks = 50, col = "steelblue",
+     main = "Posterior of k (after burn-in)", xlab = "k")
+abline(v = true_params["k"], col = "red", lwd = 2, lty = 2)
+par(mfrow = c(1, 1))
+
+cat("Posterior mean k:", mean(mcmc_chain$k[burnin:n_iter]), "\n")
+cat("95% credible interval:",
+    quantile(mcmc_chain$k[burnin:n_iter], c(0.025, 0.975)), "\n")
+```
+
+```{r}
+# -----------------------------------------------------------------------------
+# SIMPLE METROPOLIS-HASTINGS
+# -----------------------------------------------------------------------------
+
+simple_mcmc <- function(data, n_iter = 10000) {
+  chain <- numeric(n_iter)
+  current_k <- 0.3
+  
+  # Pre-compute ODE for current_k 
+  params <- c(Q = 1, V = 10, C_in = 1, k = current_k)
+  out <- ode(y = c(C = 0), times = data$time, func = cstr_model, parms = params)
+  current_error <- sum((data$C_obs - out[, "C"])^2)
+  
+  for (i in 1:n_iter) {
+    # Propose new k
+    proposed_k <- current_k + rnorm(1, 0, 0.03)
+    
+    # Keep in bounds
+    if (proposed_k < 0.01 || proposed_k > 1) {
+      chain[i] <- current_k
+      next
+    }
+    
+    # Run ODE with proposed k
+    params["k"] <- proposed_k
+    out <- ode(y = c(C = 0), times = data$time, func = cstr_model, parms = params)
+    proposed_error <- sum((data$C_obs - out[, "C"])^2)
+    
+    # Accept or reject
+    if (runif(1) < exp(-(proposed_error - current_error)/0.01)) {
+      current_k <- proposed_k
+      current_error <- proposed_error
+    }
+    
+    chain[i] <- current_k
+  }
+  
+  return(chain)
+}
+
+# Run it
+posterior_k <- simple_mcmc(observations)
+
+# Visualize
+hist(posterior_k[2000:10000], breaks = 50, main = "Posterior for k",
+     xlab = "Decay rate k", col = "steelblue")
+abline(v = true_params["k"], col = "red", lwd = 2, lty = 2)
+legend("topright", legend = "True k", col = "red", lty = 2, lwd = 2)
+
+```
+
+## Stan Code
+```{r eval=FALSE}
+library(rstan)
+
+# Stan code with ODE integration
+stan_code <- "
+functions {
+  real[] cstr_model(real t, real[] y, real[] params, real[] x_r, int[] x_i) {
+    real k = params[1];
+    real C = y[1];
+    real dC_dt = -k * C;
+    return {dC_dt};
+  }
+}
+data {
+  int<lower=0> N;
+  real t0;
+  real ts[N];
+  real y_obs[N];
+}
+parameters {
+  real<lower=0, upper=1> k;
+  real<lower=0> sigma;
+}
+model {
+  real y_hat[N, 1];
+  real y0[1] = {y_obs[1]};
+  
+  // Priors
+  k ~ beta(1, 1);
+  sigma ~ exponential(1);
+  
+  // Solve ODE
+  y_hat = integrate_ode_rk45(cstr_model, y0, t0, ts, {k}, rep_array(0.0, 0), rep_array(0, 0));
+  
+  // Likelihood
+  for (i in 1:N) {
+    y_obs[i] ~ normal(y_hat[i, 1], sigma);
+  }
+}
+"
+
+# Fit the model
+fit <- stan(model_code = stan_code, 
+            data = list(N = nrow(observations), 
+                        t0 = 0, 
+                        ts = observations$time, 
+                        y_obs = observations$C_obs),
+            iter = 2000, chains = 4)
+
+# --- Diagnostics ---
+print(fit, pars = c("k", "sigma"))
+traceplot(fit, pars = c("k", "sigma"))
+
+posterior <- as.data.frame(extract(fit, pars = c("k", "sigma")))
+hist(posterior$k, breaks = 50, col = "steelblue",
+     main = "Stan posterior for k", xlab = "k")
+abline(v = true_params["k"], col = "red", lwd = 2, lty = 2)
+```

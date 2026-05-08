@@ -1,0 +1,221 @@
+---
+title: "Uncertainty_analysis"
+author: "Bruno Travassos de Britto"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+# -----------------------------------------------------------------------------
+# Simple Metropolis-Hastings MCMC Implementation
+# -----------------------------------------------------------------------------
+
+known_params <- c(
+  V = 1000,      # Lake volume (m³)
+  Q = 50,        # Inflow/outflow rate (m³/day)
+  C_in=5
+)
+
+# We'll implement a simple Metropolis-Hastings algorithm
+# This helps students understand the mechanics before using packages
+
+metropolis_mcmc <- function(
+    n_iter = 10000,           # Number of iterations
+    initial_k = 0.3,          # Starting value
+    proposal_sd = 0.05,       # Proposal step size
+    observations,              # Data
+    known_params,              # Known parameters
+    prior_range = c(0.01, 1)  # Prior range for k
+) {
+  
+  # Storage for chain
+  chain <- data.frame(
+    iteration = 1:n_iter,
+    k = NA,
+    log_likelihood = NA,
+    accepted = FALSE
+  )
+  
+  # Initialize
+  current_k <- initial_k
+  current_params <- c(known_params, k = current_k)
+  
+  # Calculate initial likelihood
+  out <- ode(y = c(C = observations$C_obs[1]),
+             times = observations$time,
+             func = cstr_model,
+             parms = current_params)
+  out_df <- as.data.frame(out)
+  
+  # Log-likelihood (assuming normal errors)
+  errors <- observations$C_obs - out_df$C
+  current_loglik <- -length(errors)/2 * log(2*pi) - 
+                    0.5 * sum((errors/0.2)^2)  # Assume SD = 0.2
+  
+  chain[1, ] <- c(1, current_k, current_loglik, TRUE)
+  
+  # MCMC loop
+  for (i in 2:n_iter) {
+    # Propose new k
+    proposed_k <- rnorm(1, current_k, proposal_sd)
+    
+    # Check prior bounds
+    if (proposed_k >= prior_range[1] && proposed_k <= prior_range[2]) {
+      
+      # Run model with proposed k
+      proposed_params <- c(known_params, k = proposed_k)
+      out <- ode(y = c(C = observations$C_obs[1]),
+                 times = observations$time,
+                 func = cstr_model,
+                 parms = proposed_params)
+      out_df <- as.data.frame(out)
+      
+      # Calculate log-likelihood
+      errors <- observations$C_obs - out_df$C
+      proposed_loglik <- -length(errors)/2 * log(2*pi) - 
+                         0.5 * sum((errors/0.2)^2)
+      
+      # Metropolis acceptance ratio
+      log_ratio <- proposed_loglik - current_loglik
+      
+      if (log(runif(1)) < log_ratio) {
+        # Accept
+        current_k <- proposed_k
+        current_loglik <- proposed_loglik
+        accepted <- TRUE
+      } else {
+        # Reject
+        accepted <- FALSE
+      }
+    } else {
+      # Outside prior - reject automatically
+      accepted <- FALSE
+      proposed_loglik <- -Inf
+    }
+    
+    # Store
+    chain[i, ] <- c(i, current_k, current_loglik, accepted)
+  }
+  
+  return(chain)
+}
+
+# Run MCMC
+n_iter <- 10000
+mcmc_chain <- metropolis_mcmc(
+  n_iter = n_iter,
+  initial_k = 0.3,
+  proposal_sd = 0.03,
+  observations = observations,
+  known_params = known_params
+)
+
+# Calculate acceptance rate
+acceptance_rate <- mean(mcmc_chain$accepted)
+cat("MCMC Acceptance rate:", round(100 * acceptance_rate, 1), "%\n")
+
+```
+
+```{r}
+# -----------------------------------------------------------------------------
+# SIMPLE METROPOLIS-HASTINGS
+# -----------------------------------------------------------------------------
+
+simple_mcmc <- function(data, n_iter = 10000) {
+  chain <- numeric(n_iter)
+  current_k <- 0.3
+  
+  # Pre-compute ODE for current_k 
+  params <- c(Q = 1, V = 10, C_in = 1, k = current_k)
+  out <- ode(y = c(C = 0), times = data$time, func = cstr_model, parms = params)
+  current_error <- sum((data$C_obs - out[, "C"])^2)
+  
+  for (i in 1:n_iter) {
+    # Propose new k
+    proposed_k <- current_k + rnorm(1, 0, 0.03)
+    
+    # Keep in bounds
+    if (proposed_k < 0.01 || proposed_k > 1) {
+      chain[i] <- current_k
+      next
+    }
+    
+    # Run ODE with proposed k
+    params["k"] <- proposed_k
+    out <- ode(y = c(C = 0), times = data$time, func = cstr_model, parms = params)
+    proposed_error <- sum((data$C_obs - out[, "C"])^2)
+    
+    # Accept or reject
+    if (runif(1) < exp(-(proposed_error - current_error)/0.01)) {
+      current_k <- proposed_k
+      current_error <- proposed_error
+    }
+    
+    chain[i] <- current_k
+  }
+  
+  return(chain)
+}
+
+# Run it
+posterior_k <- simple_mcmc(observations)
+
+# Visualize
+hist(posterior_k[2000:10000], breaks = 50, main = "Posterior for k",
+     xlab = "Decay rate k", col = "steelblue")
+
+```
+
+```{r}
+library(rstan)
+
+# Stan code with ODE integration
+stan_code <- "
+functions {
+  real[] cstr_model(real t, real[] y, real[] params, real[] x_r, int[] x_i) {
+    real k = params[1];
+    real C = y[1];
+    real dC_dt = -k * C;
+    return {dC_dt};
+  }
+}
+data {
+  int<lower=0> N;
+  real t0;
+  real ts[N];
+  real y_obs[N];
+}
+parameters {
+  real<lower=0, upper=1> k;
+  real<lower=0> sigma;
+}
+model {
+  real y_hat[N, 1];
+  real y0[1] = {y_obs[1]};
+  
+  // Priors
+  k ~ beta(1, 1);
+  sigma ~ exponential(1);
+  
+  // Solve ODE
+  y_hat = integrate_ode_rk45(cstr_model, y0, t0, ts, {k}, rep_array(0.0, 0), rep_array(0, 0));
+  
+  // Likelihood
+  for (i in 1:N) {
+    y_obs[i] ~ normal(y_hat[i, 1], sigma);
+  }
+}
+"
+
+# Fit the model
+fit <- stan(model_code = stan_code, 
+            data = list(N = nrow(observations), 
+                        t0 = 0, 
+                        ts = observations$time, 
+                        y_obs = observations$C_obs),
+            iter = 2000, chains = 4)
+```

@@ -1,0 +1,166 @@
+---
+title: "Equifinality"
+author: "Bruno Travassos de Britto"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(deSolve)
+library(dplyr)
+library(ggplot2)
+library(tidyr)
+```
+
+# Uncertainty analysis
+
+In this lecture we are going to learn about an essential step in modelling with scientific rigour. Conducting an uncertainty analysis.
+
+When we model the world, we are trying to estimate what would be the parameters of our models in the real world.
+
+However, one of the problems is that estimation always comes associated with statistical errors. We almost never can say for sure how the world actually behaves, however, we can calculate our probability of being wrong every time we make an statement about the world. Doing so, requires us to understand the level of uncertainty of our models.
+
+First let's understand why it is important, given what we already know.
+
+## Understanding equifinality
+
+Equifinality means that, when modelling the world, we can reach multiple sets of parameters that seems reasonably similar to the "real-world" set of parameters. To understand this let's artificially create a "real-world" scenario.
+
+```{r}
+# Let's create a "real world" system - a simple lake with unknown parameters
+true_params <- c(
+  k = 0.03,        # Decay rate (1/day) - UNKNOWN!
+  C_in=5           # # Inflow concentration (mg/L) - UNKOWN
+    )
+
+state=c(
+C=2  
+)
+
+# Creates the model of the system
+cstr_model <- function(time,state, parameters) {
+  with(as.list(c(state, parameters)), {
+    V = 10000      # Volume (m³) - known
+    Q = 10        # Flow (m³/day) - known
+    
+    dC_dt <- (Q*C_in)/V - (Q*C)/V - k*C
+    return(list(c(dC_dt)))
+  })
+}
+
+# Run the real system to steady state
+times <- seq(0, 100, by = 1)
+true_output <- ode(y = state, times = times, 
+                   func = cstr_model, parms = true_params)
+true_output_df <- as.data.frame(true_output)
+
+```
+
+So we created a model with outputs without errors. That is impossible to have when trying to understand our world.
+
+**Sources of Uncertainty:**
+
+1.  **Parameter uncertainty** - We don't know the true values.
+
+2.  **Structural uncertainty** - Our model might be wrong (maybe decay isn't first-order?)
+
+3.  **Scenario uncertainty** - Future conditions might be different
+
+4.  **Observation uncertainty** - Our measurements have error
+
+In this example, let's introduce errors associated with observation and sampling.
+
+
+### Introducing measurement errors
+
+```{r}
+# Add measurement error to create our "observations"
+observations <- true_output_df %>%
+  filter(time %% X  == 0) %>%  # Sample every X days - change the value of X 
+  mutate(C_obs = pmax(0,C + rnorm(n(),0, error )))  # set a value of error that signifies the level of error distancing your observations from the real-world model.
+
+# Plot the observations
+
+```
+
+### Estimating parameters
+Now, if this was a real experiment, we would have our noisy observations and we know the best model to predict the system described as `cstr_model`
+
+What would the next step be? 
+
+```{r}
+initial_guesses = c(k = , C_in= ) # provide initial guesses for the estimated parameters
+
+error_function_cstr <- function(parameters, time, data) {
+  out <- as.data.frame(ode(y = state["C"],
+                           times = data$time,
+                           func = cstr_model,
+                           parms = parameters))
+  
+  C_error <- sum((out[,2]-data$C_obs)^2, na.rm = TRUE)
+  
+  return(C_error)
+}
+
+result <- optim(
+  par = initial_guesses,            # Starting point
+  fn = error_function_cstr,              # Function to minimize
+  data = observations,       # Additional arguments to error_function
+  method = "Nelder-Mead",           # Optimization algorithm
+  control = list(maxit = 1000)      # Settings
+)
+
+
+predicted_sample<-as.data.frame(ode(y = state["C"], times = observations$time, 
+                      func = cstr_model, parms = result$par))
+
+
+
+```
+
+Plot the model optimized to your data in the chunk below and save to the graph `equifinality_plot`
+
+```{r}
+
+predicted1<-predicted_sample$C
+
+equifinality_plot<- ggplot()
+
+equifinality_plot
+```
+
+If this is based on the same real-world model, why are all the models not the same?
+
+### Resampling your data.
+```{r}
+initial_guesses = c(k =.03 , C_in=5 ) # provide initial guesses for the estimated parameters
+
+rs_sample<-300
+
+rs_parameters<-data.frame(k=result$par[1],result$par[2])
+
+for(i in 1:rs_sample)
+{
+rs_observations <- true_output_df %>%
+  filter(time %% X  == 0) %>%  # Sample every X days - change the value of X 
+  mutate(C_obs = pmax(0,C + rnorm(n(),0, error )))  # set a value of error that signifies the level of error distancing your observations from the real-world model.
+
+
+result <- optim(
+  par = initial_guesses,            # Starting point
+  fn = error_function_cstr,              # Function to minimize
+  data = rs_observations,       # Additional arguments to error_function
+  method = "Nelder-Mead",           # Optimization algorithm
+  control = list(maxit = 1000)      # Settings
+)
+rs_parameters[i,1]<-result_bs$par[1]
+rs_parameters[i,2]<-result_bs$par[2]
+
+print(i)
+}
+
+hist(rs_parameters$k)
+
+```
+

@@ -1,0 +1,402 @@
+---
+title: "Mass Balance models"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    theme: journal
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(deSolve)
+library(ggplot2)
+library(tidyr)
+library(dplyr)
+library(gridExtra)
+
+```
+
+# The Streeter-Phelps Model
+
+## Oxygen Sag in Rivers
+
+Biochemical Oxygen Demand (BOD) represents the amount of oxygen needed by aerobic bacteria 
+to consume organic waste in an aquatic environment. Dissolved Oxygen (DO) is amount of oxygen 
+dissolved in the water. 
+
+### Parameters
+- $[BOD]$ 
+  - BOD concentration
+- $[D] = [DO_{sat}] - [DO]$
+  - Dissolved oxygen deficit
+- $k_d$ 
+  - Deoxygenation rate (1/day) 
+- $k_a$ 
+  - Reaeration rate (1/day)
+- $\frac{d[BOD]}{dt} = -k_d \times  [L]$ 
+  - Change $[BOD]$
+- $\frac{d[D]}{dT} = k_d \times [BOD] - k_a \times [D]$ 
+  - Change in dissolved oxygen deficit
+<br>
+
+<br>
+
+### Model
+```{r, warning=FALSE}
+
+# Parameters from literature [citation:4]
+params_sp <- c(
+  k_d    = 1,  # Deoxygenation rate (1/day)
+  k_a    = 1,  # Reaeration rate (1/day)
+  DO_sat = 9.2 # Saturation DO (mg/L)
+)
+
+# Initial state
+state_sp <- c(
+  L0 = 12, # Initial BOD (mg/L)
+  D0 = 3   # Initial DO deficit (mg/L)
+)    
+
+# Define the Streeter-Phelps model
+streeter_phelps <- function(time, state, parameters) {
+  with(as.list(c(state, parameters)), {
+    dL <- -k_d * L0
+    dD <- (k_d * L0) - (k_a * D0)
+    return(list(c(dL, dD)))
+  })
+}
+
+# Time (days)
+times_sp <- seq(0, 10, by = 0.1)
+
+# Solve
+out_sp <- ode(
+  y     = state_sp,
+  times = times_sp,
+  func  = streeter_phelps,
+  parms = params_sp
+) 
+
+# Convert to data frame and calculate actual DO
+out_sp_df    <- as.data.frame(out_sp)
+out_sp_df$DO <- params_sp["DO_sat"] - out_sp_df$D0
+
+# Plot BOD and DO
+out_long <- out_sp_df       %>%
+  select(time, BOD=L0, DO)  %>%
+  pivot_longer(
+    cols      = c(BOD, DO),
+    names_to  = "variable",
+    values_to = "concentration"
+  )
+
+ggplot(
+  out_long, 
+  aes(x = time, y = concentration, color = variable)) +
+  geom_line(linewidth = 1.2) +
+  geom_hline(yintercept = params_sp["DO_sat"],linetype="dashed")+
+  theme_minimal() +
+  scale_color_manual(values = c("BOD" = "red", "DO" = "steelblue")
+  )
+```
+
+By modelling the organic contamination as a point source, there is a sudden increase in $[BOD]$. This create an *oxygen deficit*
+in the ecosystem, leading to a decrease in the amount of dissolved oxygen. However, as the waste is consumed $[BOD]$ decreases. 
+As $[BOD]$ decreases the reareation term begins to outpace
+the deoxygenation rate. As a result, $[DO]$ will initially dip since the rate of 
+reareation is lower than the rate of deoxygenation, but will gradually recover as 
+$[BOD]$ decreases.
+
+#### Explanation
+
+**Parameters:**
+
+- $k_d = 1$ day$^{-1}$: the deoxygenation rate constant. It controls how quickly microorganisms break down organic matter and consume oxygen in the process. A larger $k_d$ means the waste is decomposed faster, which draws oxygen out of the water more rapidly.
+
+- $k_a = 1$ day$^{-1}$: the reaeration rate constant. It describes how quickly the river absorbs oxygen from the atmosphere. Physical factors like turbulence, wind, and surface area drive this process. When $k_a > k_d$, the river can recover more quickly from an oxygen deficit.
+
+- $DO_{sat} = 9.2$ mg/L: the saturation concentration of dissolved oxygen at the water's temperature. This is the maximum amount of oxygen the water can hold; actual DO is always at or below this value.
+
+- $L_0 = 12$ mg/L: the initial BOD at the point of contamination. This represents the total oxygen demand imposed by the organic waste entering the river.
+
+- $D_0 = 3$ mg/L: the initial oxygen deficit, meaning the river is already 3 mg/L below saturation before the waste begins to decompose.
+
+**Graph:**
+
+The plot shows the classic oxygen sag curve. The red BOD curve decays exponentially as bacteria consume the organic load. The blue DO curve dips below the dashed saturation line, reaching a minimum around day 1--2 where oxygen consumption most exceeds reaeration. After that critical point, BOD has dropped enough that reaeration dominates and DO recovers toward saturation. The depth and timing of the sag depend on the ratio $k_d / k_a$: when the two rates are equal (as here), the sag is moderate and recovery is relatively quick.
+
+**Environmental relevance:**
+
+The Streeter-Phelps model is one of the oldest and most widely used tools in water quality management. It allows engineers and regulators to predict how far downstream a pollution event will depress oxygen levels, which is critical for protecting aquatic life. Fish and invertebrates require minimum DO thresholds (typically 4--6 mg/L) to survive, so identifying the location and severity of the sag determines where ecological damage is most likely and how much treatment a discharge requires before it can be released.
+
+
+## Parameterizing the Streeter-Phelps Equation
+
+
+
+# Parameterizing the Streeter-Phelps Equation
+
+## Estimating Parameters from Data
+
+Now we connect to Week 6 skills! Here's how to fit Streeter-Phelps to real data:
+
+```{r}
+# -----------------------------------------------------------------------------
+# Parameterizing Streeter-Phelps with optim()
+# -----------------------------------------------------------------------------
+
+# Synthetic observed data for demonstration
+set.seed(123)
+observed_times <- seq(0, 10, by = 0.5)
+observed_data <- data.frame(
+  time = observed_times,
+  BOD  = 12 * exp(-0.8 * observed_times) + rnorm(length(observed_times), 0, 0.5),
+  DO   = 9.2 - 3 * exp(-0.6 * observed_times) + rnorm(length(observed_times), 0, 0.3)
+)
+
+initial_guess <- c(k_d = 1, k_a = 1, L0 = 10, D0 = 2) # Initial guesses (could come from visual estimation)
+DO_sat = 9.2
+
+# Error function for fitting
+error_function_sp <- function(parameters, time, data) {
+  # parameters: kd, ka, L0, D0
+  # Note: DO_sat is known from temperature
+  
+  # Simulate model
+  state <- c(L0  = parameters[[3]], D0  = parameters[[4]])
+  parms <- c(k_d = parameters[[1]], k_a = parameters[[2]])
+
+  out   <- as.data.frame(
+    ode(
+      y     = state,
+      times = time,
+      func  = streeter_phelps,
+      parms = parms
+    )
+  )
+  
+  # Calculate DO from deficit
+  out$DO <- DO_sat - out$D0
+
+  # Calculate error (sum of squared errors for both BOD and DO)
+  BOD_error <- sum((out$L0 - data$BOD)^2, na.rm = TRUE)
+  DO_error  <- sum((out$DO - data$DO)^2, na.rm = TRUE)
+  
+  # Weight DO error more because it's the key variable
+  total_error <- BOD_error + 5 * DO_error
+  
+  return(total_error)
+}
+
+
+
+# Run optimization
+result_sp <- optim(
+  par     = initial_guess,
+  fn      = error_function_sp,
+  time    = observed_data$time,
+  data    = observed_data,
+  method  = "Nelder-Mead",
+  control = list(maxit = 1000)
+)
+
+# Plot fitted model
+fitted_state <- c(L0  = result_sp$par[[3]], D0  = result_sp$par[[4]])
+fitted_parms <- c(k_d = result_sp$par[[1]], k_a = result_sp$par[[2]])
+
+fitted_out <- as.data.frame(
+  ode(
+    y     = fitted_state,
+    times = observed_times,
+    func  = streeter_phelps,
+    parms = fitted_parms
+  )
+)
+fitted_out$DO <- DO_sat - fitted_out$D0
+
+ggplot() +
+  geom_point(data = observed_data,aes(x = time, y = BOD), color = "red",       alpha = 0.5) +
+  geom_point(data = observed_data,aes(x = time, y = DO),  color = "steelblue", alpha = 0.5) +
+  geom_line(data  = fitted_out,   aes(x = time, y = L0),  color = "red",       linewidth = 1) +
+  geom_line(data  = fitted_out,   aes(x = time, y = DO),  color = "steelblue", linewidth = 1) +
+  labs(
+    title    = "Fitted Streeter-Phelps Model",
+    subtitle = "Points: observed data; Lines: fitted model",
+    x        = "Time (days)",
+    y        = "Concentration (mg/L)"
+  ) +
+theme_minimal()
+```
+
+#### Explanation
+
+**Parameters:**
+
+- `initial_guess`: the starting point for the optimizer. Nelder-Mead is a derivative-free simplex method, so it explores the parameter space by evaluating the error function at a set of trial points. A poor initial guess can trap it in a local minimum or cause it to diverge.
+
+- The error function computes the sum of squared residuals between the model prediction and the observed data for both BOD and DO. The DO term is weighted 5$\times$ more heavily because DO is the variable of primary ecological interest---a good fit to BOD that produces a poor DO prediction is not useful.
+
+- `optim()` with `method = "Nelder-Mead"` performs unconstrained optimization, iterating until either the simplex contracts below a tolerance or `maxit` iterations are reached. Convergence code 0 indicates success.
+
+**Graph:**
+
+The scatter points represent noisy synthetic field measurements of BOD (red) and DO (blue). The solid curves are the model trajectories produced by the optimized parameters. A close fit between curves and points indicates that the optimizer successfully recovered the underlying dynamics from the noisy data. Remaining scatter is due to the random measurement error added during data generation.
+
+**Environmental relevance:**
+
+In practice, you would replace the synthetic data with real field measurements collected at stations downstream of a discharge. Fitting the model to those observations calibrates $k_d$ and $k_a$ to the specific river, accounting for local temperature, turbulence, and waste composition. This calibrated model can then be used to predict the impact of changes in discharge loading or to set permit limits through Total Maximum Daily Load (TMDL) analyses.
+
+
+# Point Sources vs Distributed Sources
+
+## Point source (single discharge)
+
+```{r}
+# Point source at x=0
+point_source_model <- function(distance, state, parameters) {
+  with(as.list(c(state, parameters)), {
+    # Convert time to distance using velocity
+    # dL/dx = -(kd/u) * L
+    # dD/dx = (kd/u) * L - (ka/u) * D
+    dL <- -(kd / u) * L
+    dD <-  (kd / u) * L - (ka / u) * D
+    
+    return(list(c(dL, dD)))
+  })
+}
+
+#assing the parameters you estimated for the observed data with the streeter-phelps model above.
+params_river <- c(
+  kd     = 0.35,
+  ka     = 0.75,
+  u      = 10,        # River velocity (km/day)
+  DO_sat = 9.2 
+)
+
+# Initial conditions at discharge point
+state_point <- c(L = 15, D = 2)
+
+distances   <- seq(0, 150, by = 0.5)
+
+point_source_out <- ode(
+  y     = state_point,
+  times = distances,
+  func  = point_source_model,
+  parms = params_river
+)
+
+point_source_df    <- as.data.frame(point_source_out)
+point_source_df$DO <- params_river["DO_sat"] - point_source_df$D
+
+ggplot(
+  point_source_df, 
+  aes(x = time, y = DO)) +
+  geom_line(linewidth = 1.2, color = "steelblue") +
+  scale_y_continuous(limits=c(0,15))+
+  labs(
+    title    = "Point Source: Single Discharge",
+    subtitle = "Oxygen sag downstream of wastewater treatment plant",
+    x        = "Distance downstream (km)",
+    y        = "Dissolved Oxygen (mg/L)"
+  ) +
+  theme_minimal()
+```
+
+#### Explanation
+
+**Parameters:**
+
+- $u = 10$ km/day: the river velocity, which converts the time-based reaction rates into spatial rates. The effective spatial rate constants become $k_d/u$ and $k_a/u$ (per km instead of per day). At 10 km/day the water travels roughly 0.42 km/hr.
+
+- $k_d = 0.35$ day$^{-1}$, $k_a = 0.75$ day$^{-1}$: because $k_a > k_d$, the river has a strong capacity to reareate relative to the oxygen demand, so recovery after the sag is relatively rapid.
+
+- $L = 15$ mg/L, $D = 2$ mg/L: conditions immediately downstream of the discharge after initial mixing. $L$ is the BOD load from the effluent and $D$ is the oxygen deficit already present at the outfall.
+
+**Graph:**
+
+The curve traces DO as a function of distance downstream from the single discharge at $x = 0$. DO drops from its initial value to a minimum (the critical point) where deoxygenation and reaeration are momentarily balanced, then rises back toward saturation as the BOD load is consumed. The entire sag-and-recovery pattern stretches over roughly 150 km because the velocity carries the reacting water downstream while the reactions proceed.
+
+**Environmental relevance:**
+
+Point source models are the basis for discharge permitting. Regulators use them to define mixing zones, determine how much treatment a wastewater plant must provide, and ensure that downstream water intakes or ecologically sensitive reaches maintain adequate DO. The model also applies to accidental spill scenarios, predicting how far downstream oxygen depression will extend.
+
+**What happens when we change the velocity of the river?**
+
+Increasing the velocity stretches the oxygen sag curve over a longer downstream distance: the critical point moves farther from the discharge because the water carries the reacting mixture downstream faster than the reactions can play out. However, the minimum DO value does not change much because the same total amount of BOD is still being consumed---it just happens over more kilometres. Conversely, decreasing the velocity compresses the sag into a shorter reach. The critical point occurs closer to the outfall and, in slow-moving or stagnant water, the localised oxygen depletion can become severe enough to create anoxic conditions and fish kills near the discharge.
+
+## Distributed Souces (Multiple or Non-Point)
+
+```{r}
+# Distributed sources - constant input along reach
+# This requires adding a source term
+
+distributed_source_model <- function(distance, state, parameters) {
+  with(as.list(c(state, parameters)), {
+    # dL/dx = -(kd/u)*L + (source_rate/u)
+    # dD/dx = (kd/u)*L - (ka/u)*D
+    
+    dL <- -(kd / u) * L + (source_rate / u)
+    dD <-  (kd / u) * L - (ka / u) * D
+    
+    return(list(c(dL, dD)))
+  })
+}
+
+### use the same parameters you used in the model before. 
+
+params_distributed <- c(
+  kd          = 0.35,
+  ka          = 0.75,
+  u           = 10,
+  source_rate = 0.5,  # BOD input per km (mg/L per km)
+  DO_sat      = 9.2
+)
+
+# Initial conditions
+state_dist <- c(L = 15, D = 2)  # Background levels
+
+distributed_out <- ode(
+  y     = state_dist,
+  times = distances,
+  func  = distributed_source_model,
+  parms = params_distributed
+)
+
+distributed_df <- as.data.frame(distributed_out)
+distributed_df$DO <- params_distributed["DO_sat"] - distributed_df$D
+
+# Compare point vs distributed
+ggplot() +
+  geom_line(data = point_source_df, aes(x = time, y = DO, color = "Point source"),        linewidth = 1) +
+  geom_line(data = distributed_df,  aes(x = time, y = DO, color = "Distributed sources"), linewidth = 1) +
+  labs(
+    title = "Point Source vs Distributed Sources",
+    x     = "Distance downstream (km)",
+    y     = "Dissolved Oxygen (mg/L)",
+    color = ""
+  ) +
+  theme_minimal()
+```
+
+#### Explanation
+
+**Parameters:**
+
+- `source_rate` $= 0.5$ mg/L per km: a continuous addition of BOD along the entire river reach, representing non-point pollution such as agricultural runoff, urban stormwater, or many small septic discharges. Unlike the point source model where all pollution enters at $x = 0$, the distributed model adds organic load at every point downstream.
+
+- The remaining parameters ($k_d$, $k_a$, $u$) are identical to the point source case so the two scenarios can be compared directly.
+
+**Graph:**
+
+Both curves start from the same initial conditions, but they diverge downstream. The point source curve (which recovers toward saturation) contrasts with the distributed source curve, which either recovers more slowly, reaches a lower equilibrium, or continues to decline. The continuous input of BOD prevents the river from fully self-purifying because new organic matter constantly replenishes what bacteria have already consumed.
+
+**Environmental relevance:**
+
+Non-point source pollution is the dominant water quality challenge in most developed countries. Agricultural fertilisers, livestock waste, and urban runoff enter rivers along their entire length rather than at a single pipe. The distributed model captures this reality and shows that even individually small inputs can accumulate to produce persistent oxygen depression across long river reaches. This is why watershed-scale land use management---buffer strips, cover crops, stormwater retention---is necessary in addition to treating individual point discharges.
+
+**What happens if we change the source_rate?**
+
+Increasing `source_rate` raises the steady-state BOD in the river, which deepens the oxygen deficit and pushes the equilibrium DO lower. If the source rate is high enough, reaeration can never keep up with the continuous oxygen demand and DO drops to zero (anoxic conditions). Decreasing `source_rate` allows the river's natural reaeration to dominate, and the distributed curve converges toward the point source curve---eventually, with `source_rate = 0`, the two models are identical.
